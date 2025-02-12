@@ -31,6 +31,8 @@ get_batch(is) = CloneMe.get_batch(enct, is, block_size)
 
 (X, Y) = get_batch(1:(split_idx-block_size))
 (Xv, Yv) = get_batch((split_idx-block_size):l-block_size)
+(X_gpu, Y_gpu) = (X |> device, Y |> device)
+(Xv_gpu, Yv_gpu) = (Xv |> device, Yv |> device)
 
 # model 
 T = block_size
@@ -40,31 +42,36 @@ nh = 100
 emb = Embedding(nc, n_embd)
 reshape_fn = x -> reshape(x, (n_embd * block_size, :))
 l1 = Dense(n_embd * block_size, nh, tanh)
-l2 = Dense(nh, nc)
+l3 = Dense(nh, nc)
 
 model_cpu = Chain(
     emb,
     x -> reshape(x, (n_embd * block_size, :)),
     l1,
-    l2
-) 
+    # l2=Dense(nh, nh, tanh),
+    l3
+)
 model_gpu = deepcopy(model_cpu) |> device
 
 model = model_gpu
+
+
 
 # train 
 batch_size = 64
 loader = Flux.DataLoader((data=X, label=Y), batchsize=batch_size, shuffle=true)
 loader2 = Flux.DataLoader((data=X, label=Y), batchsize=batch_size, shuffle=false)
+
+loader_gpu = Flux.DataLoader((data=X_gpu, label=Y_gpu), batchsize=batch_size, shuffle=true)
 xb, yb = first(loader2)
+xg, yg = first(loader_gpu)
 
 lr = 1e-2
 opt_state = Flux.setup(Flux.Descent(lr), model)
 
 losses = []
 test_losses = []
-for (i, xy_cpu) in enumerate(loader)
-    x, y = xy_cpu |> device
+for (i, (x, y)) in enumerate(loader_gpu)
     loss, grads = Flux.withgradient(model) do m
         logits = m(x)
         loss = logitcrossentropy(logits, onehotbatch(y, 1:nc))
@@ -73,13 +80,10 @@ for (i, xy_cpu) in enumerate(loader)
 
     push!(losses, loss)
     if i % 1000 == 0
-        test_loss = logitcrossentropy(model(Xv), onehotbatch(Yv, 1:nc))
+        test_loss = logitcrossentropy(model(Xv_gpu), onehotbatch(Yv_gpu, 1:nc))
         push!(test_losses, (i, test_loss))
         @show i loss test_loss
     end
-    # if i == 10000
-    #     break
-    # end
 end
 
 p = plot(losses)
@@ -219,3 +223,6 @@ end
 
 CUDA.@profile model_gpu(xb_gpu)
 @benchmark CUDA.@sync model_gpu($xb_gpu)
+
+onehotbatch(yb, 1:nc) |> device
+Base.isbitstype(onehotbatch(yb, 1:nc))
