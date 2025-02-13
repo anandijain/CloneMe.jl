@@ -9,7 +9,10 @@ https://github.com/anandijain/nn_zero_to_hero
 
 
 todo: 
+* make the batching work so that we do the padding basically ;;;a -> b etc 
 * write a grid searchy thing to see if larger models on gpu end up being actually faster 
+* evaluate the test loss using a bigram model
+* attention
 
 done:
 * log some generated text during training to see if it seems to meaningfully improve

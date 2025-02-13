@@ -35,6 +35,16 @@ function get_batch(t, is, block_size)
     (stack(xs), ys)
 end
 
+function get_example2(t, i, block_size)
+    x = t[i:i+block_size-1]
+    y = t[(i+1):(i+block_size)]
+    x, y
+end
+function get_batch2(t, is, block_size)
+    xys = unzip(get_example2.((t,), is, (block_size,)))
+    stack.(xys)
+end
+
 function generate(model, n, block_size, xenc, itos; maxlen=100)
     outs = []
     for _ in 1:n
@@ -81,5 +91,5 @@ function embedding_plot(model)
 end
 
 export char_ps, ix_maps, alphabet, get_example, get_batch, generate
-
+export get_example2, get_batch2
 end # module CloneMe

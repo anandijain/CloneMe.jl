@@ -15,7 +15,7 @@ t = filter(isascii, s)
 l = length(t)
 
 # take 3 characters and predict the fourth 
-block_size = 10
+block_size = 8
 split_idx = round(Int, 0.9 * l)
 
 chars = alphabet(t)
@@ -30,14 +30,20 @@ enct = enc(ts)
 get_example(i) = CloneMe.get_example(enct, i, block_size)
 get_batch(is) = CloneMe.get_batch(enct, is, block_size)
 
+get_example2(i) = CloneMe.get_example2(enct, i, block_size)
+get_batch2(is) = CloneMe.get_batch2(enct, is, block_size)
+
 (X, Y) = get_batch(1:(split_idx-block_size))
 (Xv, Yv) = get_batch((split_idx-block_size):l-block_size)
 (X_gpu, Y_gpu) = (X |> device, Y |> device)
 (Xv_gpu, Yv_gpu) = (Xv |> device, Yv |> device)
 
+# (X, Y) = get_batch2(1:2)
+
+
 # model 
 T = block_size
-C = n_embd = 20
+n_embd = 20
 nh = 200
 
 emb = Embedding(nc, n_embd)
@@ -49,10 +55,15 @@ model_cpu = Chain(
     emb,
     x -> reshape(x, (n_embd * block_size, :)),
     l1,
-    Dense(nh, nh, tanh),
+    Dense(nh, nh, relu),
+    Dense(nh, nh, relu),
     # Dense(nh, nh, tanh),
     l3
 )
+
+
+logits = model_cpu(X) # (C, B) classes by batch size 
+# (B, T, C )
 
 model_gpu = deepcopy(model_cpu) |> device
 model = model_gpu
@@ -75,28 +86,28 @@ losses = []
 test_losses = []
 
 outs = []
-start_str = "bro I am h"
+start_str = "bro I am"
 @assert length(start_str) == block_size
 xenc = enc(collect(start_str))
 
-for ep in 1:100
-    for (i, (x, y)) in enumerate(loader_gpu)
-        loss, grads = Flux.withgradient(model) do m
-            logits = m(x)
-            loss = logitcrossentropy(logits, onehotbatch(y, 1:nc))
-        end
-        Flux.update!(opt_state, model, grads[1])
+# for ep in 1:100
+for (i, (x, y)) in enumerate(loader_gpu)
+    loss, grads = Flux.withgradient(model) do m
+        logits = m(x)
+        loss = logitcrossentropy(logits, onehotbatch(y, 1:nc))
+    end
+    Flux.update!(opt_state, model, grads[1])
 
-        push!(losses, loss)
-        if i % 1 == 0
-            test_loss = logitcrossentropy(model(Xv_gpu), onehotbatch(Yv_gpu, 1:nc))
-            push!(test_losses, (i, test_loss))
-            gen = generate(cpu(model), 1, block_size, xenc, itos)
-            @show i loss test_loss gen
-            push!(outs, (i, gen))
-        end
+    push!(losses, loss)
+    if i % 1000 == 0
+        test_loss = logitcrossentropy(model(Xv_gpu), onehotbatch(Yv_gpu, 1:nc))
+        push!(test_losses, (i, test_loss))
+        gen = generate(cpu(model), 1, block_size, xenc, itos)
+        @show i loss test_loss gen
+        push!(outs, (i, gen))
     end
 end
+# end
 
 p = plot(losses)
 plot!(p, unzip(test_losses)...)
