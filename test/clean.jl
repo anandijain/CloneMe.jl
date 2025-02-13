@@ -3,12 +3,12 @@ using Flux: logitcrossentropy, onehotbatch
 using CloneMe
 using Plots
 using BenchmarkTools
-using CUDA, cuDNN
-CUDA.allowscalar(false)
-device = gpu_device()
+# using CUDA, cuDNN
+# CUDA.allowscalar(false)
+# device = gpu_device()
 
 s = read("C:/Users/anand/src/transcript_grabber/data/dataset.txt", String)
-# s = read("dataset.txt", String)
+s = read("./data/shakespeare.txt", String)
 na = filter(!isascii, s)
 
 t = filter(isascii, s)
@@ -18,7 +18,7 @@ l = length(t)
 block_size = 8
 split_idx = round(Int, 0.9 * l)
 
-chars = alphabet(t)
+chars = alphabet(t;pad_char='^')
 nc = length(chars)
 stoi, itos = ix_maps(chars)
 enc(x) = getd(stoi, x)
@@ -35,11 +35,8 @@ get_batch2(is) = CloneMe.get_batch2(enct, is, block_size)
 
 (X, Y) = get_batch(1:(split_idx-block_size))
 (Xv, Yv) = get_batch((split_idx-block_size):l-block_size)
-(X_gpu, Y_gpu) = (X |> device, Y |> device)
-(Xv_gpu, Yv_gpu) = (Xv |> device, Yv |> device)
-
-# (X, Y) = get_batch2(1:2)
-
+# (X_gpu, Y_gpu) = (X |> device, Y |> device)
+# (Xv_gpu, Yv_gpu) = (Xv |> device, Yv |> device)
 
 # model 
 T = block_size
@@ -56,8 +53,6 @@ model_cpu = Chain(
     x -> reshape(x, (n_embd * block_size, :)),
     l1,
     Dense(nh, nh, relu),
-    Dense(nh, nh, relu),
-    # Dense(nh, nh, tanh),
     l3
 )
 
@@ -65,33 +60,36 @@ model_cpu = Chain(
 logits = model_cpu(X) # (C, B) classes by batch size 
 # (B, T, C )
 
-model_gpu = deepcopy(model_cpu) |> device
-model = model_gpu
+# model_gpu = deepcopy(model_cpu) |> device
+model = model_cpu
 
 
 
 # train 
-batch_size = 64
+batch_size = 32
 loader = Flux.DataLoader((data=X, label=Y), batchsize=batch_size, shuffle=true)
 loader2 = Flux.DataLoader((data=X, label=Y), batchsize=batch_size, shuffle=false)
 
-loader_gpu = Flux.DataLoader((data=X_gpu, label=Y_gpu), batchsize=batch_size, shuffle=true)
 xb, yb = first(loader2)
-xg, yg = first(loader_gpu)
 
-# lr = 1e-1
-opt_state = Flux.setup(Flux.ADAM(), model)
+# loader_gpu = Flux.DataLoader((data=X_gpu, label=Y_gpu), batchsize=batch_size, shuffle=true)
+# xg, yg = first(loader_gpu)
+
 
 losses = []
 test_losses = []
 
 outs = []
 start_str = "bro I am"
+start_str = "First Ci"
 @assert length(start_str) == block_size
 xenc = enc(collect(start_str))
 
+lr = 1e-2
+opt_state = Flux.setup(Flux.Descent(lr), model)
+
 # for ep in 1:100
-for (i, (x, y)) in enumerate(loader_gpu)
+for (i, (x, y)) in enumerate(loader)
     loss, grads = Flux.withgradient(model) do m
         logits = m(x)
         loss = logitcrossentropy(logits, onehotbatch(y, 1:nc))
@@ -100,10 +98,11 @@ for (i, (x, y)) in enumerate(loader_gpu)
 
     push!(losses, loss)
     if i % 1000 == 0
-        test_loss = logitcrossentropy(model(Xv_gpu), onehotbatch(Yv_gpu, 1:nc))
+        test_loss = logitcrossentropy(model(Xv), onehotbatch(Yv, 1:nc))
         push!(test_losses, (i, test_loss))
         gen = generate(cpu(model), 1, block_size, xenc, itos)
-        @show i loss test_loss gen
+        @show i loss test_loss
+        println("\n\n", only(gen), "\n\n")
         push!(outs, (i, gen))
     end
 end

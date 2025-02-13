@@ -62,7 +62,7 @@ function generate(model, n, block_size, xenc, itos; maxlen=100)
                 break
             end
             circshift!(xenc, -1)
-            xenc[3] = ix
+            xenc[end] = ix
             i += 1
         end
         o = join(out)
