@@ -8,13 +8,14 @@ CUDA.allowscalar(false)
 device = gpu_device()
 
 s = read("C:/Users/anand/src/transcript_grabber/data/dataset.txt", String)
+# s = read("dataset.txt", String)
 na = filter(!isascii, s)
 
 t = filter(isascii, s)
 l = length(t)
 
 # take 3 characters and predict the fourth 
-block_size = 8
+block_size = 10
 split_idx = round(Int, 0.9 * l)
 
 chars = alphabet(t)
@@ -36,8 +37,8 @@ get_batch(is) = CloneMe.get_batch(enct, is, block_size)
 
 # model 
 T = block_size
-C = n_embd = 10
-nh = 100
+C = n_embd = 20
+nh = 200
 
 emb = Embedding(nc, n_embd)
 reshape_fn = x -> reshape(x, (n_embd * block_size, :))
@@ -48,11 +49,12 @@ model_cpu = Chain(
     emb,
     x -> reshape(x, (n_embd * block_size, :)),
     l1,
-    # l2=Dense(nh, nh, tanh),
+    Dense(nh, nh, tanh),
+    # Dense(nh, nh, tanh),
     l3
 )
-model_gpu = deepcopy(model_cpu) |> device
 
+model_gpu = deepcopy(model_cpu) |> device
 model = model_gpu
 
 
@@ -66,75 +68,41 @@ loader_gpu = Flux.DataLoader((data=X_gpu, label=Y_gpu), batchsize=batch_size, sh
 xb, yb = first(loader2)
 xg, yg = first(loader_gpu)
 
-lr = 1e-2
-opt_state = Flux.setup(Flux.Descent(lr), model)
+# lr = 1e-1
+opt_state = Flux.setup(Flux.ADAM(), model)
 
 losses = []
 test_losses = []
-for (i, (x, y)) in enumerate(loader_gpu)
-    loss, grads = Flux.withgradient(model) do m
-        logits = m(x)
-        loss = logitcrossentropy(logits, onehotbatch(y, 1:nc))
-    end
-    Flux.update!(opt_state, model, grads[1])
 
-    push!(losses, loss)
-    if i % 1000 == 0
-        test_loss = logitcrossentropy(model(Xv_gpu), onehotbatch(Yv_gpu, 1:nc))
-        push!(test_losses, (i, test_loss))
-        @show i loss test_loss
+outs = []
+start_str = "bro I am h"
+@assert length(start_str) == block_size
+xenc = enc(collect(start_str))
+
+for ep in 1:100
+    for (i, (x, y)) in enumerate(loader_gpu)
+        loss, grads = Flux.withgradient(model) do m
+            logits = m(x)
+            loss = logitcrossentropy(logits, onehotbatch(y, 1:nc))
+        end
+        Flux.update!(opt_state, model, grads[1])
+
+        push!(losses, loss)
+        if i % 1 == 0
+            test_loss = logitcrossentropy(model(Xv_gpu), onehotbatch(Yv_gpu, 1:nc))
+            push!(test_losses, (i, test_loss))
+            gen = generate(cpu(model), 1, block_size, xenc, itos)
+            @show i loss test_loss gen
+            push!(outs, (i, gen))
+        end
     end
 end
 
 p = plot(losses)
 plot!(p, unzip(test_losses)...)
 
-function generate(model, n, block_size; maxlen=100)
-    outs = []
-    for _ in 1:n
-        # xenc = ones(Int, block_size) # ";;;"
-        # xenc = rand(1:nc, block_size)
-        xenc = enc(collect(";;;;;you"))
-        out = []
-        i = 1
-        while true
-            logits = model(reshape(xenc, (1, block_size)))
-            counts = vec(softmax(logits))
-            ix = sample(Weights(counts))
-            push!(out, itos[ix])
-            if ix == 1 || i == maxlen
-                break
-            end
-            circshift!(xenc, -1)
-            xenc[3] = ix
-            i += 1
-        end
-        o = join(out)
-        # println(o)
-        push!(outs, o)
-    end
-    outs
-end
+outs = generate(cpu(model), 10, block_size, xenc, itos)
 
-outs = generate(model, 10, block_size)
-
-
-# visualize embedding
-function embedding_plot(model)
-    C = model.layers[1].weight
-
-    emb_xys = eachcol(C)
-    xlims = extrema(C[1, :])
-    ylims = extrema(C[1, :])
-    uxys = unzip(emb_xys)
-
-    pl = scatter()
-    zuxt = collect(zip(uxys..., chars))
-    annotate!(pl, zuxt)
-    xlims!(pl, xlims)
-    ylims!(pl, ylims)
-    pl
-end
 embedding_plot(model)
 
 @benchmark model(xb)
