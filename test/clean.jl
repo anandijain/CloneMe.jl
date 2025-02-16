@@ -4,11 +4,13 @@ using CloneMe
 using Plots
 using BenchmarkTools
 # using CUDA, cuDNN
+using JLD2
+
 # CUDA.allowscalar(false)
 # device = gpu_device()
 
 s = read("C:/Users/anand/src/transcript_grabber/data/dataset.txt", String)
-s = read("./data/shakespeare.txt", String)
+# s = read("./data/shakespeare.txt", String)
 na = filter(!isascii, s)
 
 t = filter(isascii, s)
@@ -18,7 +20,7 @@ l = length(t)
 block_size = 8
 split_idx = round(Int, 0.9 * l)
 
-chars = alphabet(t;pad_char='^')
+chars = alphabet(t)
 nc = length(chars)
 stoi, itos = ix_maps(chars)
 enc(x) = getd(stoi, x)
@@ -56,7 +58,6 @@ model_cpu = Chain(
     l3
 )
 
-
 logits = model_cpu(X) # (C, B) classes by batch size 
 # (B, T, C )
 
@@ -85,7 +86,7 @@ start_str = "First Ci"
 @assert length(start_str) == block_size
 xenc = enc(collect(start_str))
 
-lr = 1e-2
+lr = 1e-1
 opt_state = Flux.setup(Flux.Descent(lr), model)
 
 # for ep in 1:100
@@ -107,6 +108,9 @@ for (i, (x, y)) in enumerate(loader)
     end
 end
 # end
+
+model_state = Flux.state(model);
+jldsave("model.jld2"; model_state)
 
 p = plot(losses)
 plot!(p, unzip(test_losses)...)
