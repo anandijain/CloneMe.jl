@@ -28,6 +28,22 @@ function get_example(t, i, block_size)
     x, y
 end
 
+function ngrams(cs, n)
+    return zip((cs[i:end-n+i] for i in 1:n)...)
+end
+
+function counts_tensor(str, n, enc)
+    chars = sort(unique(str))
+    nc = length(chars)
+    cs = collect(str)
+    M = zeros(Int, fill(nc, n)...)
+    for c in ngrams(cs, n)
+        idxs = enc(c)
+        M[idxs...] += 1
+    end
+    M
+end
+
 unzip(xs) = first.(xs), last.(xs)
 
 function get_batch(t, is, block_size)
@@ -90,6 +106,6 @@ function embedding_plot(model)
     pl
 end
 
-export char_ps, ix_maps, alphabet, get_example, get_batch, generate
+export char_ps, ix_maps, alphabet, ngrams, counts_tensor, get_example, get_batch, generate
 export get_example2, get_batch2
 end # module CloneMe

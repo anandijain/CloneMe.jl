@@ -56,6 +56,4 @@ bigram(x) = sample(weight_vecs[x])
 # evaluate the test loss with bigram model 
 Xve, Yve = enc(Xv), enc(Yv)
 
-
-stack(P[Xve, :])[1, :, :]
 test_loss = logitcrossentropy(P[Xve, :][1, :, :]', onehotbatch(Yve, 1:nc))
